@@ -42,6 +42,11 @@ public:
 		visited_=true;
 		return *this;
 	}
+	Cell& unvisit( )
+	{
+		this->visited_ = false;
+		return *this;
+	}
 	
 	// 1101 1101
 	// 0100 0010
@@ -87,6 +92,20 @@ public:
 		out << 0 << ' ' << -WALL_SIZE 
 			<< draw_wall(has_wall(LEFT)) << endl;	
 	}
+
+	void start_path( ostream& out ) const
+	{
+		out << (col_ + 1)*WALL_SIZE + WALL_SIZE/2 << ' '
+			<< (row_ + 1)*WALL_SIZE + WALL_SIZE/2 << ' '
+			<< "moveto" << endl;
+	}
+
+	void leave_path( ostream& out ) const
+	{
+		out << (col_ + 1)*WALL_SIZE + WALL_SIZE/2 << ' '
+			<< (row_ + 1)*WALL_SIZE + WALL_SIZE/2 << ' '
+			<< "lineto" << endl;
+	}
 };
 
 class BoardError{};
@@ -94,6 +113,52 @@ class BoardError{};
 class Board {
 	unsigned height_, width_;
 	vector<Cell> cells_;
+	vector<Cell *> path_;
+
+	void generate_(int row, int col) {
+		Cell& c=get_cell(row,col);
+		c.visit();
+		while(true) {
+			if(has_unvisited_neighbour(row,col)==NONE) {
+				return;
+			}
+			Direction dir
+				=get_random_unvisited_neighbour(row,col);
+			drill_wall(row,col,dir);
+			Cell& n=get_neighbour(row,col,dir);
+			generate_(n.get_row(),n.get_col());
+		}
+	}
+
+	bool find_way_(unsigned current_row, unsigned current_col,
+		unsigned end_row, unsigned end_col)
+	{
+		if( current_row == end_row && current_col == end_col )
+			return true;
+
+		Cell& c = this->get_cell( current_row, current_col );
+		c.visit( );
+
+		while( true )
+		{
+			if( this->has_unvisited_accessible_neighbour(
+				current_row, current_col) == NONE )
+				return false;
+
+			Direction dir = this->get_random_unvisited_accessible_neighbour(
+				current_row , current_col );
+			Cell& n = this->get_neighbour( current_row, current_col, dir );
+
+			bool res = this->find_way_( n.get_row( ), n.get_col( ),
+				end_row, end_col );
+			if( res )
+			{
+				this->path_.push_back( &n );
+				return res;
+			}
+		}
+	}
+
 public:
 	Board(unsigned height, unsigned width)
 	: height_(height),
@@ -122,7 +187,13 @@ public:
 			(*it).draw(out);	
 		}	
 		out << "stroke" << endl;
-		out << "showpage" << endl;
+	}
+
+	void reset_cells( )
+	{
+		for( vector<Cell> :: iterator i = cells_.begin( );
+			i != cells_.end( ); ++i )
+			i->unvisit( );
 	}
 	
 	bool has_neighbour(int row, int col, 
@@ -192,6 +263,24 @@ public:
 		}
 		return NONE;
 	}
+
+	Direction has_unvisited_accessible_neighbour( int row, int col )
+	{
+		Cell &c = this->get_cell( row, col );
+
+		for( int i = 0; i < DSIZE; i++ )
+		{
+			Direction dir = DIRS[i];
+			if( this->has_neighbour( row, col, dir ) && !c.has_wall( dir ) )
+			{
+				Cell& n = this->get_neighbour( row, col, dir );
+				if( !n.is_visited( ) )
+					return dir;
+			}
+		}
+
+		return NONE;
+	}
 	
 	Direction get_random_unvisited_neighbour(int row, int col) {
 		if(has_unvisited_neighbour(row,col)==NONE) {
@@ -210,33 +299,78 @@ public:
 			}		
 		}
 	}
-	
-	void generate(int row, int col) {
-		Cell& c=get_cell(row,col);
-		c.visit();
-		while(true) {
-			if(has_unvisited_neighbour(row,col)==NONE) {
-				return;
+
+	Direction get_random_unvisited_accessible_neighbour( int row, int col )
+	{
+		if( this->has_unvisited_accessible_neighbour( row, col ) == NONE )
+			return NONE;
+
+		Cell &c = this->get_cell( row, col );
+		while( true )
+		{
+			int ind = rand( ) % DSIZE;
+			Direction dir = DIRS[ind];
+
+			if( this->has_neighbour( row, col, dir ) && !c.has_wall( dir ) )
+			{
+				Cell& c = this->get_neighbour( row, col, dir );
+				if( !c.is_visited( ) )
+					return dir;
 			}
-			Direction dir
-				=get_random_unvisited_neighbour(row,col);
-			drill_wall(row,col,dir);
-			Cell& n=get_neighbour(row,col,dir);
-			generate(n.get_row(),n.get_col());
 		}
 	}
 	
+	void generate( int row, int col )
+	{
+		this->generate_( row, col );
+
+		this->reset_cells( );
+	}
+
+	void find_way( unsigned start_row, unsigned start_col,
+		unsigned end_row, unsigned end_col )
+	{
+		this->path_.clear( );
+
+		this->find_way_( start_row, start_col, end_row, end_col );
+		this->path_.push_back( &this->get_cell( start_row, start_col ) );
+
+		this->reset_cells( );
+	}
+
+	void draw_way( ostream& out ) const
+	{
+		out << "newpath" << endl;
+		this->path_.back( )->start_path( out );
+
+		for( vector<Cell *> :: const_reverse_iterator i =
+			this->path_.rbegin( ) + 1; i != this->path_.rend( ); ++i )
+			(*i)->leave_path( out );
+
+		out << "1 0 0 setrgbcolor" << endl;
+		out << "stroke" << endl;
+	}
+
+	void present( ostream& out )
+	{
+		out << "showpage" << endl;
+	}
 };
 const Direction Board::DIRS[] = {UP,LEFT,DOWN,RIGHT};
 
 int main() {
 	Board b(20, 20);
-	
+
 	b.generate(0,0);
-		
+
 	b.draw(cout);
 
-	
+	b.find_way( 0, 0, 19, 19 );
+
+	b.draw_way( cout );
+
+	b.present( cout );
+
 	return 0;
 }
 
