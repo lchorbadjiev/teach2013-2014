@@ -16,10 +16,9 @@ function [x, y, vx, vy] = trajectory(T, N, x0, y0, vx0, vy0)
   vy(1) = vy0;
 
   dt = T/N;
-  disp(dt)
 
   for n=2:N
-    [ax, ay] = accel(x(n-1),y(n-1), vx(n-1), vy(n-1));
+    [ax, ay] = grav(x(n-1),y(n-1), vx(n-1), vy(n-1));
     vx(n) = vx(n-1) + ax * dt;
     vy(n) = vy(n-1) + ay * dt;
 
